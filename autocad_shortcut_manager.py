@@ -23,7 +23,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 
 # 修复 Windows 控制台 Unicode 输出问题
-if sys.platform == 'win32':
+if sys.platform == 'win32' and not getattr(sys, 'frozen', False):
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
@@ -959,9 +959,19 @@ def manage_shortcuts(manager: AutoCADShortcutManager):
             # 检查是否已存在
             existing = manager.get_shortcut_by_alias(alias)
             if existing:
-                print(f"⚠️ 别名 '{alias}' 已存在: {existing.alias} → {existing.command}")
-                confirm = input("是否覆盖? [y/N]: ").strip().lower()
-                if confirm not in ('y', 'yes'):
+                # 自动处理：旧别名改为其命令全名，腾出别名给新命令
+                old_cmd = existing.command
+                print(f"⚠️ 别名 '{alias}' 已被占用: {alias} → {old_cmd}")
+                success_swap, msg_swap = manager.add_shortcut(old_cmd, old_cmd, existing.description or f"原 {alias} 命令")
+                if success_swap:
+                    success_del, _ = manager.delete_shortcut(alias)
+                    if success_del:
+                        print(f"  ↳ 已自动处理: 原命令 '{old_cmd}' 已获得新别名 '{old_cmd}'，别名 '{alias}' 已释放")
+                    else:
+                        print(f"  ↳ ⚠️ 释放别名失败，请手动处理")
+                        continue
+                else:
+                    print(f"  ↳ ⚠️ 自动处理失败: {msg_swap}")
                     continue
             
             # 选择命令
@@ -982,6 +992,23 @@ def manage_shortcuts(manager: AutoCADShortcutManager):
                 continue
             command = input("完整命令 (如: EXPLODE): ").strip()
             desc = input("描述 (可选): ").strip()
+            
+            # 检查是否已存在，自动处理冲突
+            existing = manager.get_shortcut_by_alias(alias)
+            if existing:
+                old_cmd = existing.command
+                print(f"⚠️ 别名 '{alias}' 已被占用: {alias} → {old_cmd}")
+                success_swap, msg_swap = manager.add_shortcut(old_cmd, old_cmd, existing.description or f"原 {alias} 命令")
+                if success_swap:
+                    success_del, _ = manager.delete_shortcut(alias)
+                    if success_del:
+                        print(f"  ↳ 已自动处理: 原命令 '{old_cmd}' 已获得新别名 '{old_cmd}'，别名 '{alias}' 已释放")
+                    else:
+                        print(f"  ↳ ⚠️ 释放别名失败，请手动处理")
+                        continue
+                else:
+                    print(f"  ↳ ⚠️ 自动处理失败: {msg_swap}")
+                    continue
             
             confirm = input(f"确认添加 {alias} → {command}? [Y/n]: ").strip().lower()
             if confirm in ('', 'y', 'yes'):
